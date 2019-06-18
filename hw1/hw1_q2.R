@@ -61,6 +61,7 @@ data1 <- filter(data, visit=="Visit 1, 1998")
 data1 <- na.omit(data1)
 data1 <- mutate(data1, treat=indicator(wgrp))
 
+set.seed(1234)
 fr1 <- fisher_randomize_dim(data1$totpar98, data1$treat, data1$schid, 1000)
 fr2 <- fisher_randomize_rank(data1$totpar98, data1$treat, data1$schid, 1000)
 

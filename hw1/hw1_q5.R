@@ -20,7 +20,7 @@ data_contr <- filter(data1, treat == 0)
 N <- length(data1$treat)
 J <- length(unique(data1$schid))
 J1 <- length(unique(data_treat$schid))
-J2 <- length(unique(data_contr$schid))
+J0 <- length(unique(data_contr$schid))
 
 # compute SATE
 Y1b <- sum(data_treat$totpar98) * J / (N * J1)
