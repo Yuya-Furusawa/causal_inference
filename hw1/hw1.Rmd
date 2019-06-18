@@ -1,0 +1,452 @@
+---
+title: "Homework 1"
+author: "Yuya Furusawa (29-186036)"
+date: "2019/6/20"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+```
+
+
+# Question 1
+
+Perform a Fisher's exact test of the null hypotesis $H_0: Z_{ij}(1)=Z_{ij}(0)$ for all $i,j$, where $Z_{ij}(t)$ indicates the potential missing indicator for pupil $i$ in school $j$ when the school's  treatment status is $t \in \{0,1 \}$.
+
+### Code-functions
+```{r, echo=TRUE}
+# indicator function
+indicator <- function(x){
+  I = ifelse(is.na(x), 1, 0) 
+  return(I)
+}
+```
+
+### Code
+
+```{r, echo=TRUE}
+# read original data
+data <- read.csv("wormwardata.csv")
+# use only first visit in 1998 data
+data1 <- filter(data, visit=="Visit 1, 1998")
+data1 <- mutate(data1, is_na=indicator(totpar98))
+# data with treated group in 1998
+treated_data <- filter(data1, wgrp==1)
+
+# create some vectors
+schid <- data1$schid
+unique_schid <- unique(schid)
+
+# compute test statics with treated observations
+is_na_treat <- treated_data$is_na
+# obtain test statics
+t_obs <- sum(is_na_treat)
+
+# compute the distribution of test statics
+# with Monte-Carlo approximation
+n_sim = 1000
+n <- length(data1$X)
+is_na = data1$is_na
+t_sim <- rep(NA, n_sim)
+# iterate
+set.seed(1234)
+for (b in 1:n_sim){
+  treat_sch <- sample(unique_schid, size=25)
+  treat_sim <- rep(NA, n)
+  for (i in 1:n){
+    treat_sim[i] <- ifelse(is.element(schid[i], treat_sch), 1, 0)
+  }
+  # compute test statics
+  t_sim[b] <- sum(treat_sim * is_na)
+}
+
+# obtain p-value
+pval <- mean(t_sim > t_obs)
+
+# plot
+hist(t_sim, xlab="Test Statics", main = paste("pval =", round(pval, 4)))
+abline(v = t_obs, col='red', lwd = 1.5)
+```
+
+### Interpretation
+
+```{r}
+print(pval)
+```
+
+This indicates that null hypotesis is not rejected at the typical significance level. The impact of data missing on treatment group and control group are same.
+In the light of the result obtained here, we can ignore the missing data safely.
+
+
+# Question 2
+
+Test the sharp null hypothesis of no treatment effect based on two test statistics: the difference-in-means between the treatment and control groups, and the rank-sum among the treated students
+
+### Code-functions
+
+```{r, echo=TRUE}
+# indicator function
+indicator <- function(x){
+  I <- ifelse(x==1, 1, 0)
+  return(I)
+}
+
+# fisher's randomize test : difference-in-means
+fisher_randomize_dim <- function(Y, treat, schid, n_sim){
+
+  # observed statistics
+  t_obs <- abs(mean(Y[treat==1]) - mean(Y[treat==0]))
+  
+  # Monte-Carlo approximation
+  t_sim <- rep(NA, n_sim)
+  for (b in 1:n_sim){
+    unique_schid <- unique(schid)
+    treat_sch <- sample(unique_schid, size=25)
+    treat_sim <- rep(NA, length(Y))
+    for (i in 1:length(Y)){
+      treat_sim[i] <- ifelse(is.element(schid[i], treat_sch), 1, 0)
+    }
+    t_sim[b] <- abs(mean(Y[treat_sim==1]) - mean(Y[treat_sim==0]))
+  }
+  
+  # obtain p-value
+  pval <- mean(t_sim > t_obs)
+  
+  return(list(pval=pval, t_obs=t_obs, t_sim=t_sim))
+}
+
+# fisher's randomization test : rank-sum
+fisher_randomize_rank <- function(Y, treat, schid, n_sim) {
+  
+  # observed statistics
+  y_rank <- rank(Y, ties.method = "random") - (length(Y)+1)/2
+  t_obs <- sum(treat * y_rank)
+  
+  # Monte-Carlo approximation
+  t_sim <- rep(NA, n_sim)
+  for (b in 1:n_sim){
+    unique_schid <- unique(schid)
+    treat_sch <- sample(unique_schid, size=25)
+    treat_sim <- rep(NA, length(Y))
+    for (i in 1:length(Y)){
+      treat_sim[i] <- ifelse(is.element(schid[i], treat_sch), 1, 0)
+    }
+    t_sim[b] <- sum(treat_sim * y_rank)
+  }
+  
+  # obtain p-value
+  pval <- mean(t_sim > t_obs)
+  
+  return(list(pval=pval, t_obs=t_obs, t_sim=t_sim))
+}
+```
+
+### Code
+
+```{r, echo=TRUE}
+# read data
+data <- read.csv("wormwardata.csv")
+data1 <- filter(data, visit=="Visit 1, 1998")
+data1 <- na.omit(data1)
+data1 <- mutate(data1, treat=indicator(wgrp))
+
+set.seed(1234)
+fr1 <- fisher_randomize_dim(data1$totpar98, data1$treat, data1$schid, 1000)
+fr2 <- fisher_randomize_rank(data1$totpar98, data1$treat, data1$schid, 1000)
+
+# plot
+par(mfrow = c(1,2))
+hist(fr1$t_sim, xlab="difference-in-means", main=paste("pval =", round(fr1$pval, 4)))
+abline(v = fr1$t_obs, col = 'red', lwd = 1.5)
+hist(fr2$t_sim, xlab="normalized rank", main=paste("pval =", round(fr2$pval, 4)))
+abline(v = fr2$t_obs, col = 'red', lwd = 1.5)
+```
+
+### Interpretation
+
+In the difference-in-means test, sharp null hypothesis is rejected at 5% level, and in the rank-sum test, sharp null hypothesis is rejected at 1% level. These are strong evidences that there was an effect of deworming on school attendance.
+
+
+# Question 3
+
+Invert both tests in the previous question to construct 95% confidence intervals.
+
+### Code-functions
+
+```{r, echo=TRUE}
+# fisher's confidence interaval : difference-in-means
+fisher_CI_dim <- function(Y, treat, schid, n_sim, taus){
+  pval <- rep(NA, length(taus))
+  unique_schid <- unique(schid)
+  for (i in 1:length(taus)){
+    
+    # create potential outcome
+    Y01 <- cbind(Y,Y)
+    Y01[treat==1,1] <- Y[treat==1] - taus[i]
+    Y01[treat==0,2] <- Y[treat==0] + taus[i]
+    
+    # conduct a test
+    t_obs <- abs(mean(Y01[treat==1,2]) - mean(Y01[treat==0,1]))
+    t_sim <- rep(NA, n_sim)
+    for (b in 1:n_sim){
+      treat_sch <- sample(unique_schid, size=25)
+      treat_sim <- rep(NA, length(Y))
+      for (j in 1:length(Y)){
+        treat_sim[j] <- ifelse(is.element(schid[j], treat_sch), 1, 0)
+      }
+      t_sim[b] <- abs(mean(Y01[treat_sim==1,2]) - mean(Y01[treat_sim==0,1]))
+    }
+    
+    # obtain p-value
+    pval[i] <- mean(t_sim > t_obs)
+  }
+  return(pval)
+}
+
+# fisher's confidence interaval : rank-sum
+fisher_CI_rank <- function(Y, treat, schid, n_sim, taus){
+  pval <- rep(NA, length(taus))
+  unique_schid <- unique(schid)
+  for (i in 1:length(taus)){
+    
+    # create potential outcome
+    Y01 <- cbind(Y,Y)
+    Y01[treat==1,1] <- Y[treat==1] - taus[i]
+    Y01[treat==0,2] <- Y[treat==0] + taus[i]
+    
+    # observed statistics
+    y_rank <- rank(Y, ties.method = "random") - (length(Y)+1)/2
+    t_obs <- sum(treat * y_rank)
+    
+    # conduct a test
+    t_sim <- rep(NA, n_sim)
+    for (b in 1:n_sim){
+      treat_sch <- sample(unique_schid, size=25)
+      treat_sim <- rep(NA, length(Y))
+      for (j in 1:length(Y)){
+        treat_sim[j] <- ifelse(is.element(schid[j], treat_sch), 1, 0)
+      }
+      Y_sim <- rep(NA, length(Y))
+      for (k in 1:length(Y)){
+        Y_sim[k] <- ifelse(treat_sim[k]==1, Y01[k,2], Y01[k,1])
+      }
+      y_rank_sim <- rank(Y_sim, ties.method = "random") - (length(Y)+1)/2
+      t_sim[b] <- sum(treat_sim * y_rank_sim)
+    }
+    
+    # obtain p-value
+    pval[i] <- mean(t_sim > t_obs)
+  }
+  return(pval)
+}
+```
+
+### Code
+
+```{r, echo=TRUE, results='hide'}
+# read data
+data <- read.csv("wormwardata.csv")
+data1 <- filter(data, visit=="Visit 1, 1998")
+data1 <- na.omit(data1)
+data1 <- mutate(data1, treat=indicator(wgrp))
+
+taus <- seq(0, 0.3, by=0.01)
+fr_ci_dim <- fisher_CI_dim(data1$totpar98, data1$treat, data1$schid, 500, taus)
+fr_ci_rank <- fisher_CI_rank(data1$totpar98, data1$treat, data1$schid, 500, taus)
+
+alpha <- 0.05
+accept_dim <- fr_ci_dim >= alpha/2 & fr_ci_dim <= (1 - alpha/2)
+CI_dim <- taus[accept_dim]
+accept_rank <- fr_ci_rank >= alpha/2 & fr_ci_rank <= (1 - alpha/2)
+CI_rank <- taus[accept_rank]
+```
+
+```{r, echo=TRUE}
+# plot confidential interval of difference-in-means
+plot(taus, fr_ci_dim, xlab="taus", ylab="pval(tau)", main="difference-in-means", pch=21,
+     bg=ifelse(accept_dim==1, 'black', 'gray'))
+abline(h = 1 - alpha/2, col = 'red')
+abline(h = alpha/2, col = 'red')
+```
+
+```{r, echo=TRUE}
+# plot confidential interval of rank-sum
+plot(taus, fr_ci_rank, xlab="taus", ylab="pval(tau)", main="rank-sum", pch=21,
+     bg=ifelse(accept_rank==1, 'black', 'gray'))
+abline(h = 1 - alpha/2, col = 'red')
+abline(h = alpha/2, col = 'red')
+```
+
+### Interpretation
+
+```{r, echo=TRUE}
+# confidence interval of difference-in-means
+cat("lb =", min(CI_dim), "ub =", max(CI_dim))
+```
+
+```{r, echo=TRUE}
+# confidence interval of rank-sum
+cat("lb =", min(CI_rank), "ub =", max(CI_rank))
+```
+
+Both confidence intervals don't include zero. Hence, in both tests, we can say that there is an effect of deworming on school attendance.
+
+
+# Question 4
+
+The Wilocoxon's rank-sum test statistic can be written
+\[ S = \sum_{i=1}^n T_i R_i = \sum_{i : T_i =1} R_i \]
+
+Then,
+
+\begin{eqnarray*}
+  \mathbb{E}[S] &=& \mathbb{E} \left[ \sum_{i : T_i =1} R_i \right] \\
+                &=& \frac{1}{{}_{n} \mathrm{C} _{n_1}} {}_{n-1} \mathrm{C} _{n_1-1} (1 + \cdots n) \\
+                &=& \frac{n_1}{n} \frac{n(n+1)}{2} \\
+                &=& \frac{n_1 (n+1)}{2}
+\end{eqnarray*}
+
+\begin{eqnarray*}
+  \mathbb{V}[S] &=& \mathbb{V} \left[ \sum_{i : T_i =1} R_i \right] \\
+                &=& \sum_{i : T_i =1} \mathbb{V}(R_i) + \sum_{i \neq j : T_i =1, T_j=1} \mathrm{Cov}(R_i, R_j) \\
+                &=& n_1 \frac{n^2 -1}{2} + n_1(n_1-1) \left( - \frac{n+1}{12} \right) \\
+                &=& \frac{n_0 n_1 (n+1)}{12}
+\end{eqnarray*}
+
+here we use
+
+\begin{eqnarray*}
+  \mathbb{V}(R_i) &=& \mathbb{E}[R_i^2] - {\left( \mathbb{E}[R_i] \right)}^2 \\
+                  &=& \frac{1}{n} \frac{n(n+1)(2n+1)}{6} - {\left( \frac{1+n}{2} \right)}^2 \\
+                  &=& \frac{n^2 -1}{2}
+\end{eqnarray*}
+
+and,
+
+\begin{eqnarray*}
+  \mathbb{V} \left( \sum_i R_i \right) &=& \sum_i \mathbb{V}(R_i) + \sum_{i \neq j} \mathrm{Cov}(R_i, R_j) \\
+  0 &=& n \frac{n^2 -1}{12} + n(n-1) \mathrm{Cov}(R_i, R_j) \\
+  \mathrm{Cov}(R_i, R_j) &=& - \frac{n+1}{12}
+\end{eqnarray*}
+
+
+# Question 5
+
+## (a)
+
+The estimator for SATE:
+
+\[ \hat{\tau} = \frac{J}{nJ_1} \sum_{j=1}^J \sum_{i=1}^{n_j} T_j Y_{ij} - \frac{J}{n J_0} \sum_{j=1}^J \sum_{i=1}^{n_j} (1 - T_j)Y_{ij} \]
+
+Let me denote $\mathcal{O} = {\{ Y_{ij}(0), Y_{ij}(1) \}}_{i,j}$.
+Then,
+
+\begin{eqnarray*}
+  \mathbb{E}[\hat{\tau}|\mathcal{O}] &=& \mathbb{E}\left[ \frac{J}{nJ_1} \sum_{j=1}^J \sum_{i=1}^{n_j} T_j Y_{ij}(1) - \frac{J}{n J_0} \sum_{j=1}^J \sum_{i=1}^{n_j} (1 - T_j)Y_{ij} | \mathcal{O} \right] \\
+  &=& \frac{J}{nJ_1} \sum_{j=1}^J \sum_{i=1}^{n_j} \mathbb{E}[T_j | \mathcal{O}] Y_{ij}(1) - \frac{J}{n J_0} \sum_{j=1}^J \sum_{i=1}^{n_j} \mathbb{E}[1 - T_j| \mathcal{O}] Y_{ij}(0) \\
+  &=& \frac{J}{nJ_1} \sum_{j=1}^J \sum_{i=1}^{n_j} \frac{J_1}{J} Y_{ij}(1) - \frac{J}{n J_0} \sum_{j=1}^J \sum_{i=1}^{n_j} \frac{J_0}{J} Y_{ij}(0) \\
+  &=& \frac{1}{n} \sum_{j=1}^J \sum_{i=1}^{n_j}(Y_{ij}(1) - Y_{ij}(0)) \\
+  &=& \tau
+\end{eqnarray*}
+
+Thus, $\hat{\tau}$ is unbiased for SATE.
+
+## (b)
+
+Compute the point estimate of SATE, its standard error, asymptotic 95% confidence interval.
+
+Under the constant additive unit causal effect assumption, we have
+
+\[ \mathbb{E}[\mathbb{V}(\hat{\tau}|\mathcal{O})] = \frac{\mathbb{V}(w_j \overline{Y_j(1)})}{J_1} + \frac{\mathbb{V}(w_j \overline{Y_j(0)})}{J_0} \]
+
+### Code
+
+```{r, echo=TRUE, results='hide'}
+# read data
+data <- read.csv("wormwardata.csv")
+data1 <- filter(data, visit=="Visit 1, 1998")
+data1 <- na.omit(data1)
+data1 <- mutate(data1, treat=indicator(wgrp))
+
+# treatment group data
+data_treat <- filter(data1, treat == 1)
+# control group data
+data_contr <- filter(data1, treat == 0)
+
+N <- length(data1$treat)
+J <- length(unique(data1$schid))
+J1 <- length(unique(data_treat$schid))
+J0 <- length(unique(data_contr$schid))
+
+# compute SATE
+Y1b <- sum(data_treat$totpar98) * J / (N * J1)
+Y0b <- sum(data_contr$totpar98) * J / (N * J0)
+tau_hat <- Y1b - Y0b
+
+# compute variance of treatment group
+unique_treat_sch <- unique(data_treat$schid)
+wY1 <- rep(NA, J1)
+for (i in 1:J1){
+  data_sch <- filter(data_treat, schid == unique_treat_sch[i])
+  nj <- length(data_sch$totpar98)
+  wY1[i] <- J * nj / N * mean(data_sch$totpar98)
+}
+VwY1 <- sum((wY1 - mean(wY1))^2) / (J1 - 1)
+
+# compute variance of control group
+unique_contr_sch <- unique(data_contr$schid)
+wY0 <- rep(NA, J0)
+for (i in 1:J0){
+  data_sch <- filter(data_contr, schid == unique_contr_sch[i])
+  nj <- length(data_sch$totpar98)
+  wY0[i] <- J * nj / N * mean(data_sch$totpar98)
+}
+VwY0 <- sum((wY0 - mean(wY0))^2) / (J0 - 1)
+
+# variance of SATE
+Vtau <- VwY1 / J1 + VwY0 / J0
+# standard deviation of SATE
+sdtau <- sqrt(Vtau)
+
+# asymptotic 95% confidence interval
+alpha = 0.05
+ub <- tau_hat - qnorm(alpha/2) * sdtau
+lb <- tau_hat + qnorm(alpha/2) * sdtau
+```
+
+### Interpretation
+
+```{r, echo=TRUE}
+# point estimate of SATE
+tau_hat
+```
+
+```{r, echo=TRUE}
+# standard error of SATE
+sdtau
+```
+
+```{r, echo=TRUE}
+# confidence interval
+cat("lb =", lb, "ub =", ub)
+```
+
+$\hat{\tau}$ is greater than zero, but its confidence interval includes zero and standard deviation is small. Thus, we cannot reject the conjecture that SATE is not zero with confidence.
+
+
+## (c)
+
+```{r, echo=TRUE}
+# p-value
+p1 <- pnorm(tau_hat, mean = 0, sd = sdtau)
+pval <- 2 * min(p1, 1 - p1)
+pval
+```
+
+Null hypothesis is not rejected at 5% level.
+
+### Interpretation
+
+This result suggests that there may be no effect of deworming. Compared to the result of Question 2 and 3, the impact of deworming on school attndance seems to be opposite, and this suppoorts the result of Alexander et. al.(2015).
