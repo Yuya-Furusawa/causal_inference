@@ -18,9 +18,7 @@ fisher_randomize_dim <- function(Y, treat, schid, n_sim){
     unique_schid <- unique(schid)
     treat_sch <- sample(unique_schid, size=25)
     treat_sim <- rep(NA, length(Y))
-    for (i in 1:length(Y)){
-      treat_sim[i] <- ifelse(is.element(schid[i], treat_sch), 1, 0)
-    }
+    treat_sim <- if_else(is.element(schid, treat_sch), 1, 0)
     t_sim[b] <- abs(mean(Y[treat_sim==1]) - mean(Y[treat_sim==0]))
   }
   
@@ -43,9 +41,7 @@ fisher_randomize_rank <- function(Y, treat, schid, n_sim) {
     unique_schid <- unique(schid)
     treat_sch <- sample(unique_schid, size=25)
     treat_sim <- rep(NA, length(Y))
-    for (i in 1:length(Y)){
-      treat_sim[i] <- ifelse(is.element(schid[i], treat_sch), 1, 0)
-    }
+    treat_sim <- if_else(is.element(schid, treat_sch), 1, 0)
     t_sim[b] <- sum(treat_sim * y_rank)
   }
   

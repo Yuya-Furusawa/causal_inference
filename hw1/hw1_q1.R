@@ -29,12 +29,11 @@ n <- length(data1$X)
 is_na = data1$is_na
 t_sim <- rep(NA, n_sim)
 # iterate
+set.seed(1234)
 for (b in 1:n_sim){
   treat_sch <- sample(unique_schid, size=25)
   treat_sim <- rep(NA, n)
-  for (i in 1:n){
-    treat_sim[i] <- ifelse(is.element(schid[i], treat_sch), 1, 0)
-  }
+  treat_sim <- if_else(is.element(schid, treat_sch), 1, 0)
   # compute test statics
   t_sim[b] <- sum(treat_sim * is_na)
 }

@@ -23,9 +23,7 @@ fisher_CI_dim <- function(Y, treat, schid, n_sim, taus){
     for (b in 1:n_sim){
       treat_sch <- sample(unique_schid, size=25)
       treat_sim <- rep(NA, length(Y))
-      for (j in 1:length(Y)){
-        treat_sim[j] <- ifelse(is.element(schid[j], treat_sch), 1, 0)
-      }
+      treat_sim <- if_else(is.element(schid, treat_sch), 1, 0)
       t_sim[b] <- abs(mean(Y01[treat_sim==1,2]) - mean(Y01[treat_sim==0,1]))
     }
     
@@ -55,13 +53,9 @@ fisher_CI_rank <- function(Y, treat, schid, n_sim, taus){
     for (b in 1:n_sim){
       treat_sch <- sample(unique_schid, size=25)
       treat_sim <- rep(NA, length(Y))
-      for (j in 1:length(Y)){
-        treat_sim[j] <- ifelse(is.element(schid[j], treat_sch), 1, 0)
-      }
+      treat_sim <- if_else(is.element(schid, treat_sch), 1, 0)
       Y_sim <- rep(NA, length(Y))
-      for (k in 1:length(Y)){
-        Y_sim[k] <- ifelse(treat_sim[k]==1, Y01[k,2], Y01[k,1])
-      }
+      Y_sim <- if_else(treat_sim==1, Y01[,2], Y01[,1])
       y_rank_sim <- rank(Y_sim, ties.method = "random") - (length(Y)+1)/2
       t_sim[b] <- sum(treat_sim * y_rank_sim)
     }
@@ -78,7 +72,8 @@ data1 <- filter(data, visit=="Visit 1, 1998")
 data1 <- na.omit(data1)
 data1 <- mutate(data1, treat=indicator(wgrp))
 
-taus <- seq(0, 0.5, by=0.01)
+set.seed(1234)
+taus <- seq(0, 0.25, by=0.005)
 fr_ci_dim <- fisher_CI_dim(data1$totpar98, data1$treat, data1$schid, 500, taus)
 fr_ci_rank <- fisher_CI_rank(data1$totpar98, data1$treat, data1$schid, 500, taus)
 
