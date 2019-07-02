@@ -1,0 +1,269 @@
+---
+title: "Homework 2"
+author: "Yuya Furusawa (29-186036)"
+date: "2019/07/03"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(rdrobust)
+```
+
+```{r}
+# read data
+data <- read.csv("corruption.csv");
+```
+
+## Question 1
+
+### (a)
+
+In this design, forcing variable is the population of each village, and outcome variable is whether any irregularity was found or not.
+
+### (b)
+
+We can't simply compare all "treated" and "non-treated" villages because we have multiple cutoffs (or treatment is not categorical). We cannot clearly distinguish "treated" and "non-treated". In addition, population is not random because some village has tendency to have large population (e.g. village beside the river may have large population than village in the forest because it plays a role as trading city). Also, FPM cutoff may not be random if the amount of transfer is not totally determined by the observed characterristics of the village.
+
+### (c)
+
+Estimand of this design is the causal relationship between additional transfer on corruption. But, in this RD design,
+
+\[ \tau = E[Y_i(1) - Y_i(0) | X_i = c] \]
+
+where $c$ is the cutoff, 1 indicates the treatment(higer FPM transfer), 0 indicates the control(lower FPM transfer).
+
+The weakness of this design is the fact that FPM transfer is not deterministically decided.
+
+External validity is also problematic. The result cannot be inmediately applied to other countries or other situations.
+
+
+## Question 2
+
+### (a)
+
+```{r, echo=TRUE}
+cutoff <- 10188
+data_Q2 <- filter(data, pop >= cutoff - 1000, pop <= cutoff + 1000)
+rdplot(y = data_Q2$fpm, x = data_Q2$pop,
+       x.label = "population", y.label = "FPM transfer",
+       c = cutoff, title="Question 2", p=3)
+```
+
+### (b)
+
+From the RD plot, we can see that there exists a discontinuity of FPM transfer at the cutoff. Treatment assignment mechanism here is deterministic from RD plot, but in fact assignment seems to be random. The estimand in the follwing analysis is
+
+\[ \tau = \lim_{\epsilon \rightarrow 0} E[Y_i | X_i = c_i + \epsilon] - \lim_{\epsilon \rightarrow 0} E[Y_i | X_ i = c_i - \epsilon] \]
+
+where $c_i$ is the $i$'s corresponding cutoff.
+
+
+## Question 3
+
+### (a)
+
+```{r}
+# create standardized data
+cutoffs <- c(10188, 13584, 16980, 23772, 30564, 37356, 44148)
+cdata <- vector("list", length(cutoffs))
+for (i in 1:length(cutoffs)){
+  cdata[[i]] <- filter(data, pop >= cutoffs[i] - 1000, pop <= cutoffs[i] + 1000)
+  cdata[[i]]$pop <- cdata[[i]]$pop - cutoffs[i]
+}
+stan_data <- rbind(cdata[[1]], cdata[[2]])
+for (i in 3:length(cutoffs)){
+  stan_data <- rbind(stan_data, cdata[[i]])
+};
+```
+
+```{r}
+# RD plot : narrow
+rdplot(y=stan_data$narrow, x=stan_data$pop,
+       x.label = "population", y.label = "irregurarity",
+       title="narrow", p=3)
+```
+
+```{r}
+# RD plot : broad
+rdplot(y=stan_data$broad, x=stan_data$pop,
+       x.label = "population", y.label = "irregurarity",
+       title="broad", p=3)
+```
+
+### (b)
+
+```{r}
+# Compute Density
+n <- length(stan_data$pop)
+b <- 2 * sd(stan_data$pop) / sqrt(n)
+Xdisc <- floor(stan_data$pop/b) * b + b/2
+m <- (max(Xdisc) - min(Xdisc)) / min(diff(sort(unique(Xdisc)))) + 1
+Xj <- min(Xdisc) + (0:m * min(diff(sort(unique(Xdisc)))))
+Yj <- table(factor(round(Xdisc,3), levels=round(Xj,3))) / (n*b)
+rdplot(y=Yj, x=Xj, title = "density",
+       x.label = "standardized variable", y.label = "Normalized count")
+```
+
+This implies that around the cutoff, population is not randomly distributed.
+
+### (c)
+
+```{r}
+# RD Regression : broad
+fit <- rdrobust(y=stan_data$broad, x=stan_data$pop, p=1, kernel="tri")
+res_tab <- cbind(fit$coef, fit$se)
+rownames(res_tab) <- rownames(fit$coef)
+colnames(res_tab) <- c("estimate", "se")
+print(res_tab)
+```
+
+```{r}
+# RD Regression : narrow
+fit <- rdrobust(y=stan_data$narrow, x=stan_data$pop, p=1, kernel="tri")
+res_tab <- cbind(fit$coef, fit$se)
+rownames(res_tab) <- rownames(fit$coef)
+colnames(res_tab) <- c("estimate", "se")
+print(res_tab)
+```
+
+These results indicates that we cannot reject the hypothesis that there exists a discontinuous effect on irregularity, and corruption is not caused by large FPM transfer.
+
+
+## Question 4
+
+### (a)
+
+\begin{eqnarray*}
+E [ Y_i | \tilde{X_i} = \epsilon]
+  &=& \sum_{c \in \mathcal{C}} E[Y_{ic} | \tilde{X_i} = \epsilon, C_i = c] P(C_i = c | \tilde{X_i} = \epsilon) \\
+  &=& \sum_{c \in \mathcal{C}} E[Y_{ic} | X_i = c + \epsilon, C_i = c] P(C_i = c | \tilde{X_i} = \epsilon) \\
+  &=& \sum_{c \in \mathcal{C}} E[Y_{ic}(1) | X_i = c + \epsilon, C_i = c] P(C_i = c | \tilde{X_i} = \epsilon)
+\end{eqnarray*}
+
+Last equality holds because $\epsilon > 0$.
+
+### (b)
+
+\begin{eqnarray*}
+P(C_i = c | \tilde{X_i} = x)
+  &=& \frac{P(C_i = c \wedge \tilde{X_i} = x)}{P(\tilde{X_i} = x)} \\
+  &=& \frac{P(C_i = c \wedge \tilde{X_i} = x)}{\sum_{c' \in \mathcal{C}} P(C_i = c', \tilde{X_i} = x + c')} \\
+  &=& \frac{f_{X|C}(c+x | c)P(C_i = c)}{\sum_{c' \in \mathcal{C}} f_{X|C}(c + x | c')P(C_i = c')}
+\end{eqnarray*}
+
+Second equality holds by Bayes rule.
+
+### (c)
+
+\begin{eqnarray*}
+\lim_{\epsilon \downarrow 0} E[Y_i | \tilde{X_i} = \epsilon]
+  &=& \lim_{\epsilon \downarrow 0} \sum_{c \in \mathcal{C}} E[Y_{ic}(1) | X_i = c + \epsilon, C_i = c] P(C_i = c | \tilde{X_i} = \epsilon) \\
+  &=& \lim_{\epsilon \downarrow 0} \sum_{c \in \mathcal{C}} E[Y_{ic}(1) | X_i = c + \epsilon, C_i = c] \frac{f_{X|C}(c+\epsilon | c)P(C_i = c)}{\sum_{c' \in \mathcal{C}} f_{X|C}(c + \epsilon | c')P(C_i = c')} \\
+  &=& \sum_{c \in \mathcal{C}} E[Y_{ic}(1) | X_i = c, C_i = c] \frac{f_{X|C}(c | c)P(C_i = c)}{\sum_{c' \in \mathcal{C}} f_{X|C}(c | c')P(C_i = c')} \\
+  &=& \sum_{c \in \mathcal{C}} E[Y_{ic}(1) | X_i = c, C_i = c]w_c
+\end{eqnarray*}
+
+First equation comes from (a). Second equation comes from (b). Last equation comes from the definition of $w_c$.
+
+Similary, we can show, for any $\epsilon < 0$, 
+
+\[ E[Y_i | \tilde{X_i} = \epsilon] = \sum_{c \in \mathcal{C}} E[Y_{ic}(0) | X_i = c + \epsilon, C_i = c]P(C_i = c | \tilde{X_i } = \epsilon) \]
+
+From this and (b), we have
+
+\[ \lim_{\epsilon \uparrow 0} E[Y_i | \tilde{X_i} = \epsilon] = \sum_{c \in \mathcal{C}} E[Y_{ic}(0) | X_i = c, C_i = c]w_c \]
+
+Thus, we have
+
+\begin{eqnarray*}
+\tau &=& \lim_{\epsilon \downarrow 0} E[Y_i | \tilde{X_i} = \epsilon] - \lim_{\epsilon \uparrow 0} E[Y_i | \tilde{X_i} = \epsilon] \\
+  &=& \sum_{c \in \mathcal{C}} E[Y_{ic}(1) | X_i = c, C_i = c]w_c - \sum_{c \in \mathcal{C}} E[Y_{ic}(0) | X_i = c, C_i = c]w_c \\
+  &=& \sum_{c \in \mathcal{C}} E[Y_{ic}(1) - Y_{ic}(0) | X_i = c, C_i = c]w_c
+\end{eqnarray*}
+
+Finally, we can get desired result.
+
+## Question 5
+
+### (a)
+
+Estimand in a fuzzy RD is
+
+\[ \tau = E[Y_i(1, T_i(1)) - Y_i(0, T_i(0)) | X_i = c] \]
+
+where $c$ is the coorreponding cutoff, $T_i(z)$ is the FPM transfer($z$ is 1 if population is above cutoff, 0 otherwise), $Y_i(z, T_i(z))$ is potential outcome for $z$.
+
+We need the following assumptions.
+
+1. Monotonicity, village $i$ gets more FMP transfer when the population is above cutoff than that when it is below cutoff.
+
+2. Exclusion restriction, irregurarity level is same if FMP transfer is same.
+
+3. $E[Y_i | \tilde{X_i} = x]$ and $E[D_i | \tilde{X_i} = x]$ are continuous in $x$.
+
+### (b)
+
+#### (1)
+
+From Question 4, we have 
+
+\[ \tau_{wald} = \frac{\sum_{c \in \mathcal{C}} E[Y_{ic}(1) - Y_{ic}(0) | X_i = c, C_i = c]w_c}{\sum_{c \in \mathcal{C}} E[D_{ic}(1) - D_{ic}(0) | X_i = c, C_i = c]w_c} \]
+
+Therefore,
+
+\[ \hat{\tau}_{wald} = ... \]
+
+#### (2)
+
+```{r, echo=TRUE}
+# fuzzy RD : broad
+fit_frd <- rdrobust(y=stan_data$broad, x=stan_data$pop, fuzzy=stan_data$fpm, p=1, kernel="tri")
+summary(fit_frd)
+```
+
+Therefore, $\hat{Var}(\hat{\tau}_{wald}) = (0.027)^2 \approx 0.0007$
+
+```{r, echo=TRUE}
+# fuzzy RD : narrow
+fit_frd <- rdrobust(y=stan_data$narrow, x=stan_data$pop, fuzzy=stan_data$fpm, p=1, kernel="tri")
+summary(fit_frd)
+```
+
+Therefore, $\hat{Var}(\hat{\tau}_{wald}) = (0.044)^2 \approx 0.0019$
+
+#### (3)
+
+These results indicate that we cannot reject the hypothesis $\hat{\tau}_{eald} = 0$.
+
+### (c)
+
+```{r, echo=FALSE}
+# create indicator variable Z
+indicator <- function(x){
+  I <- ifelse(x >= 0, 1, 0)
+  return(I)
+}
+stan_data <- mutate(stan_data, above=indicator(pop))
+
+# 1st stage refression
+result <- lm(stan_data$fpm ~ stan_data$pop * stan_data$above)
+# # fitted value of D
+D_hat <- stan_data$fpm - result$residuals
+```
+
+```{r, echo=TRUE}
+# 2SLS : broad
+result_broad <- lm(stan_data$broad ~ D_hat * stan_data$pop)
+summary(result_broad)
+```
+
+```{r, echo=TRUE}
+# 2SLS : narrow
+result_narrow <- lm(stan_data$narrow ~ D_hat * stan_data$pop)
+summary(result_narrow)
+```
+
+These results show that $\tau$ is greater than zero, that is, there is a positive effect of FPM transfer on corruption. This is an evidence of 
+
