@@ -1,0 +1,344 @@
+---
+title: 'Causal Inference: Final Exam'
+author: "Yuya Furusawa (29-186036)"
+date: "2019/7/31"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(equivalence)
+```
+
+```{r}
+# read data
+data <- readRDS("enos2016.rds")
+# create a binary treatment indicator
+data <- data %>%
+  mutate(treated=ifelse(demo.distance <= 500, 1, 0))
+n <- length(data$id)
+```
+
+# Question 1
+
+## (a)
+
+$\tau$ can be seen as the effect of demolished project. First term of RHS is the probability of voting by the person who lived near the demolished project and the second term of voting if he does not live near the demolished project.
+
+## (b)
+
+\begin{eqnarray*}
+\tau &=& \text{Pr}(Y_{i,2004}(1)=1|D_i=1) - \text{Pr}(Y_{i,2004}(0)=1|D_i=1) \\
+     &=& E[Y_{i,2004}(1)|D_i=1] - E[Y_{i,2004}(0)|D_i=1] \\
+     &=& E[Y_{i,2004}(1)|D_i=1] - \{ E[Y_{i,2004}(0)|D_i=0] - E[Y_{i,2000}(0)|D_i=0] + E[Y_{i,2000}(0)|D_i=1] \} \\
+     &=& E[Y_{i,2004}(1) - Y_{i,2000}(0)|D_i=1] - E[Y_{i,2004}(0) - Y_{i,2000}(0)|D_i=0]
+\end{eqnarray*}
+
+Third equality comes from the parallel trends assumption. We can observe $Y_{i,2004}(1)$ and $Y_{i,2000}(0)$ for $i$ with $D_i=1$, and $Y_{i,2004}(0)$ and $Y_{i,2000}(0)$ for $i$ with $D_i=0$ since demolished projects happened after 2000. Therefore, $tau$ is nonparametrically identified.
+
+## (c)
+
+```{r}
+data_q1_treated <- data %>%
+  filter(treated == 1)
+data_q1_control <- data %>%
+  filter(treated == 0)
+treated = c(mean(data_q1_treated$vote1996),
+            mean(data_q1_treated$vote2000),
+            mean(data_q1_treated$vote2004))
+control = c(mean(data_q1_control$vote1996),
+            mean(data_q1_control$vote2000),
+            mean(data_q1_control$vote2004))
+plot(c(1996, 2000, 2004), treated, ylim = c(0.4,0.8),
+     type='l', xlab="year", ylab="mean prob. turnout", col="red", main="prallel trend")
+par(new=TRUE)
+plot(c(1996, 2000, 2004), control, ylim = c(0.4,0.8),
+     type='l', xlab="", ylab="", col="black")
+legend("bottomright", legend = c("treated", "control"), col = c("red", "black"), lwd=c(1,1))
+```
+
+From this figure, it seems to see that parallel trend assumption holds.
+
+## (d)
+
+We will conductTOST (two one sided test) with $\Delta = 0.05$
+
+```{r}
+delta_1 <- data_q1_treated$vote2000 - data_q1_treated$vote1996
+delta_0 <- data_q1_control$vote2000 - data_q1_control$vote1996
+tost(delta_1, delta_0, epsilon=0.05)
+```
+
+From this test, we can see parallel trend assumption holds.
+
+## (e)
+
+### (1)
+
+From (b), the estimator $\hat{\tau}$ is
+
+\begin{eqnarray*}
+\hat{\tau} &=& \left( \frac{1}{n_1} \sum_{i=1}^n D_i Y_{i,2004} - \frac{1}{n_0} \sum_{i=1}^n (1 - D_i) Y_{i,2004} \right) - \left( \frac{1}{n_1} \sum_{i=1}^n D_i Y_{i,2000} - \frac{1}{n_0} \sum_{i=1}^n (1 - D_i) Y_{i,2000} \right) \\
+           &=& \frac{1}{n_1} \sum_{i=1}^n D_i (Y_{i,2004} - Y_{i,2000}) - \frac{1}{n_0} \sum_{i=1}^n (1 - D_i) (Y_{i,2004} - Y_{i,2000})
+\end{eqnarray*}
+
+where $n_1$ and $n_0$ are the number of treated voters and controled voters respectively.
+
+### (2)
+
+```{r}
+time <- c(rep(0,n), rep(1,n))
+z <- c(data$treated, data$treated)
+y <- c(data$vote2000, data$vote2004)
+model.did = lm(y ~ time + z)
+summary(model.did)
+```
+
+From this regression, estimated $\hat{\tau}$ is $-0.0278468$ and its standard error is $0.0027471$.
+
+### (3)
+
+From the estimation (2), we can reject the null hypothesis $H_0 : \tau = 0$. We can see that demolished project leaded to about 3% decline of voting for the people near the project area.
+
+
+# Question 2
+
+## (a)
+
+\begin{eqnarray*}
+\tau &=& \text{Pr}(Y_{i,2004}(1)=1|D_i=1) - \text{Pr}(Y_{i,2004}(0)=1|D_i=1) \\
+    &=& E[Y_{i,2004}(1)|D_i=1] - E[Y_{i,2004}(0)|D_i=1] \\
+    &=& E[E[Y_{i,2004}(1)|D_i=1, Z_i=z]] - E[E[Y_{i,2004}(0)|D_i=1, Z_i=z]] \\
+    &=& E[E[Y_{i,2004}(1)|D_i=1, Z_i=z] - \{ E[Y_{i,2004}(0)|D_i=0, Z_i=z] - E[Y_{i,2000}(0)|D_i=0, Z_i=z] + E[Y_{i,2000}(0)|D_i=1, Z_i=z] \}] \\
+    &=& E[E[Y_{i,2004}(1) - Y_{i,2000}(0)|D_i=1, Z_i=z]] - E[E[Y_{i,2004}(0) - Y_{i,2000}(0)|D_i=0, Z_i=z]]
+\end{eqnarray*}
+
+Fourth equality comes from the Assumption 2. By the same argument in Question 1 (b), $\tau$ is nonparametrically identified.
+
+## (b)
+
+### (1)
+
+First, create new variables.
+
+```{r}
+data_q2 <- data %>%
+  mutate(white=ifelse(whitename >= 0.975, 1, 0)) %>%
+  mutate(black=ifelse(blackname >= 0.975, 1, 0))
+data_q2_white <- data_q2 %>% filter(white==1)
+data_q2_black <- data_q2 %>% filter(black==1)
+t_white <- data_q2_white %>% filter(treated==1)
+c_white <- data_q2_white %>% filter(treated==0)
+t_black <- data_q2_black %>% filter(treated==1)
+c_black <- data_q2_black %>% filter(treated==0)
+treated_white = c(mean(t_white$vote1996),
+                  mean(t_white$vote2000),
+                  mean(t_white$vote2004))
+control_white = c(mean(c_white$vote1996),
+                  mean(c_white$vote2000),
+                  mean(c_white$vote2004))
+treated_black = c(mean(t_black$vote1996),
+                  mean(t_black$vote2000),
+                  mean(t_black$vote2004))
+control_black = c(mean(c_black$vote1996),
+                  mean(c_black$vote2000),
+                  mean(c_black$vote2004))
+```
+
+Inspect the parallel trend assumption of the white.
+
+```{r}
+plot(c(1996, 2000, 2004), treated_white, ylim = c(0.3,0.9),
+     type='l', xlab="year", ylab="mean prob. turnout", col="red", main="parallel trend : white")
+par(new=TRUE)
+plot(c(1996, 2000, 2004), control_white, ylim = c(0.3,0.9),
+     type='l', xlab="", ylab="", col="black")
+legend("bottomright", legend = c("treated", "control"), col = c("red", "black"), lwd=c(1,1))
+```
+
+From this plot, we can see the parallel assumption does not hold.
+
+Next, inspect the parallel trend assumption of the black.
+
+```{r}
+plot(c(1996, 2000, 2004), treated_black, ylim = c(0.3,0.9),
+     type='l', xlab="year", ylab="mean prob. turnout", col="red", main="parallel trend : black")
+par(new=TRUE)
+plot(c(1996, 2000, 2004), control_black, ylim = c(0.3,0.9), type='l', xlab="", ylab="", col="black")
+legend("bottomright", legend = c("treated", "control"), col = c("red", "black"), lwd=c(1,1))
+```
+
+From this figure, we can find the parallel trend assumption holds.
+
+### (c)
+
+#### Step 1
+
+\begin{eqnarray*}
+E[\hat{\tau}_{\text{HT}}]
+&=& E \left[ \frac{1}{n} \sum_{i=1}^n \left\{ \frac{Y_{i,2004} - Y_{i,2000}}{\pi_i} \frac{D_i - \pi(Z_i)}{1 - \pi(Z_i)} \right\} \right] \\
+&=& \frac{1}{n} \sum_{i=1}^n E \left[ \frac{Y_{i,2004} - Y_{i,2000}}{\pi_i} \frac{D_i - \pi(Z_i)}{1 - \pi(Z_i)} \right] \\
+&=& \frac{1}{n} \sum_{i=1}^n E \left[ E \left[ \frac{Y_{i,2004} - Y_{i,2000}}{\pi_i} \frac{D_i - \pi(Z_i)}{1 - \pi(Z_i)} | Z_i \right] \right] \\
+&=& \frac{1}{n} \sum_{i=1}^n E \left[ \frac{1}{1 - \pi(Z_i)} E \left[ \frac{D_i (Y_{i,2004} - Y_{i,2000})}{\pi_i} | Z_i \right] - \frac{\pi(Z_i)}{1 - \pi(Z_i)} E \left[ \frac{Y_{i,2004} - Y_{i,2000}}{\pi_i} | Z_i \right] \right] \\
+&=& \frac{1}{n} \sum_{i=1}^n E \left[ \left\{ \frac{1}{\pi(Z_i)} E [ D_i (Y_{i,2004} - Y_{i,2000}) | Z_i ] - \frac{1}{1 - \pi(Z_i)} E [ (1 - D_i)(Y_{i,2004} - Y_{i,2000}) | Z_i ] \right\} \frac{\pi(Z_i)}{\pi_i} \right] \\
+&=& \frac{1}{n} \sum_{i=1}^n E \left[ \left\{ \frac{1}{\pi(Z_i)} \pi(Z_i) E [ Y_{i,2004} - Y_{i,2000} | Z_i, D_i=1 ] - \frac{1}{1 - \pi(Z_i)} (1 - \pi(Z_i)) E [ Y_{i,2004} - Y_{i,2000} | Z_i, D_i=0 ] \right\} \frac{\pi(Z_i)}{\pi_i} \right] \\
+&=& \frac{1}{n} \sum_{i=1}^n E \left[ \left\{ E[Y_{i,2004} - Y_{i,2000} | Z_i, D_i=1] - E[Y_{i,2004} - Y_{i,2000} | Z_i, D_i=0] \right\} \frac{\pi(Z_i)}{\pi_i} \right]
+\end{eqnarray*}
+
+#### Step 2
+
+\begin{eqnarray*}
+\frac{\pi(Z_i)}{\pi_i} &=& \frac{\text{Pr}(D_i=1|Z_i)}{\text{Pr}(D_i=1)} \\
+                       &=& \frac{1}{\text{Pr}(D_i=1)} \frac{\text{Pr}(D_i=1) f_{Z|D}(Z|D=1)}{f_Z(Z)} \\
+                       &=& \frac{f_{Z|D} (Z|D=1)}{f_Z(Z)}
+\end{eqnarray*}
+
+Second equality comes from Bayes's law.
+
+#### Step 3
+
+From Step 1 and 2, we have
+
+\[ E[\hat{\tau}_{\text{HT}}] = \frac{1}{n} \sum_{i=1}^n E \left[ \left\{ E[Y_{i,2004} - Y_{i,2000} | Z_i, D_i=1] - E[Y_{i,2004} - Y_{i,2000} | Z_i, D_i=0] \right\} \frac{f_{Z|D} (Z|D=1)}{f_Z(Z)} \right] \]
+
+From this, we have
+
+\begin{eqnarray*}
+E[\hat{\tau}_{\text{HT}}] 
+&=& \frac{1}{n} \sum_{i=1}^n E \left[ \left\{ E[Y_{i,2004} - Y_{i,2000} | Z_i, D_i=1] - E[Y_{i,2004} - Y_{i,2000} | Z_i, D_i=0] \right\} \frac{f_{Z|D} (Z|D=1)}{f_Z(Z)} \right] \\
+&=& \frac{1}{n} \sum_{i=1}^n E \left[ E[Y_{i,2004} - Y_{i,2000} | Z_i, D_i=1] \frac{f_{Z|D} (Z|D=1)}{f_Z(Z)} \right] - \frac{1}{n} \sum_{i=1}^n E \left[ E[Y_{i,2004} - Y_{i,2000} | Z_i, D_i=0] \frac{f_{Z|D} (Z|D=1)}{f_Z(Z)} \right] \\
+&=& E[E[Y_{i,2004}(1) - Y_{i,2000}(0)|D_i=1, Z_i=z]] - E[E[Y_{i,2004}(0) - Y_{i,2000}(0)|D_i=0, Z_i=z]] \\
+&=& \tau
+\end{eqnarray*}
+
+Last equality comes from (a).
+
+## (d)
+
+Skip
+
+## (e)
+
+```{r}
+data_q2 <- data_q2 %>%
+  mutate(log.medianincome=log(medianincome)) %>%
+  mutate(log.prior.ave.value=log(prior.avg.value)) %>%
+  mutate(gender.dummy=ifelse(gender=="M", 1, 0))
+
+pi <- sum(data_q2$treated) / n
+
+# compute propensity score with covariates Z
+logi <- glm(treated ~ pid + gender.dummy + age + log.medianincome + log.prior.ave.value + pctblack,
+            data=data_q2, family=binomial)
+ps <- logi$fitted.values
+
+total = 0
+for (i in 1:n){
+  total = total + (data_q2$vote2004[i] - data_q2$vote2000[i]) / pi *
+                  (data_q2$treated[i] - ps[i]) / (1 - ps[i])
+}
+tau_ht = total/n
+
+total = 0
+for (i in 1:n){
+  total = total + ((data_q2$vote2004[i] - data_q2$vote2000[i]) / pi *
+                     (data_q2$treated[i] - ps[i]) / (1 - ps[i]) - tau_ht)^2
+}
+tau_ht_sd = sqrt(total/n)
+
+q2e <- matrix(0, 1, 2)
+colnames(q2e) <- c("estimated tau", "standard error") 
+q2e[1,] <- c(tau_ht, tau_ht_sd)
+print(q2e)
+```
+
+From this analysis, we can see $\hat{\tau}_{\text{HT}}$ is $-0.01717544$, that is, the voting rate slightly declined. However, its standard error is $3.868484$, so we cannot reject the null hypothesis that $\tau = 0$.
+
+
+# Question 3
+
+## (a)
+
+$\hat{\tau_2}$ is the effect of demolish project base on the voting behavior in 1996. First term represents the average change voting from 1996 to 2004 for people who live near the project area. Second term represents the one for people who do not live near that area.
+
+## (b)
+
+$\hat{\beta_{\text{FE2}}}$ can be written as
+
+\[ \hat{\beta_{\text{FE2}}} = \frac{\sum_{i=1}^n \sum_{t \in \mathcal{T}} \ddot{X_{it}} \ddot{Y_{it}}}{\sum_{i=1}^n \sum_{t \in \mathcal{T}} \ddot{X_{it}}^2} \]
+
+For the numerator,
+
+\begin{align*}
+& \sum_{i=1}^n \sum_{t \in \mathcal{T}}\ddot{X_{it}}\ddot{Y_{it}} \\
+&= \sum_{i=1}^n \{ (X_{i,2004} - \overline{X_i} - \overline{X_{2004}} + \overline{X})(Y_{i,2004} - \overline{Y_i} - \overline{Y_{2004}} - \overline{Y}) \\
+&\  + (X_{i,2000} - \overline{X_i} - \overline{X_{2000}} + \overline{X})(Y_{i,2000} - \overline{Y_i} - \overline{Y_{2000}} - \overline{Y}) \\
+&\  + (X_{i,1996} - \overline{X_i} - \overline{X_{1996}} + \overline{X})(Y_{i,1996} - \overline{Y_i} - \overline{Y_{1996}} - \overline{Y}) \} \\
+&= \sum_{i=1}^n \{ (X_{i,2004} - \frac{X_{i, 2004}}{3} - \overline{X_{2004}} + \frac{X_{i,2004}}{3})(Y_{i,2004} - \overline{Y_i} - \overline{Y_{2004}} - \overline{Y}) \\
+&\  + (- \frac{X_{i, 2004}}{3} + \frac{X_{i,2004}}{3})(Y_{i,2000} - \overline{Y_i} - \overline{Y_{2000}} - \overline{Y}) \\
+&\  + (- \frac{X_{i, 2004}}{3} + \frac{X_{i,2004}}{3})(Y_{i,1996} - \overline{Y_i} - \overline{Y_{1996}} - \overline{Y}) \} \\
+&= \frac{1}{3} \sum_{i=1}^n (X_{i,2004} - \overline{X_{2004}}) \{ (Y_{i,2004} - \overline{Y_{2004}}) - (Y_{i,2000} - \overline{Y_{2000}}) \} \\
+&\  + \frac{1}{3} \sum_{i=1}^n (X_{i,2004} - \overline{X_{2004}}) \{ (Y_{i,2004} - \overline{Y_{2004}}) - (Y_{i,1996} - \overline{Y_{1996}}) \} \\
+&= \frac{1}{3} \sum_{i=1}^n (X_{i,2004} - \overline{X_{i,2004}})(Y_{i,2004} - Y_{i,2000}) + \frac{1}{3} \sum_{i=1}^n (X_{i,2004} - \overline{X_{i,2004}})(Y_{i,2004} - Y_{i,1996}) \\
+&= \frac{1}{3} \sum_{i=1}^n X_{i,2004}(Y_{i,2004} - Y_{i,2000}) - \frac{1}{3} \sum_{i=1}^n \overline{X_{2004}}(Y_{i,2004} - Y_{i,2000}) \\
+&\  + \frac{1}{3} \sum_{i=1}^n X_{i,2004}(Y_{i,2004} - Y_{i,1996}) - \frac{1}{3} \sum_{i=1}^n \overline{X_{2004}}(Y_{i,2004} - Y_{i,1996}) \\
+&= \frac{1}{3} \sum_{i=1}^n D_i(Y_{i,2004} - Y_{i,2000}) - \frac{1}{3} \frac{n_1}{n} \sum_{i=1}^n (Y_{i,2004} - Y_{i,2000}) \\
+&\  + \frac{1}{3} \sum_{i=1}^n D_i(Y_{i,2004} - Y_{i,1996}) - \frac{1}{3} \frac{n_1}{n} \sum_{i=1}^n (Y_{i,2004} - Y_{i,1996}) \\
+&= \frac{1}{3} \frac{n_0}{n} \sum_{i=1}^n D_i(Y_{i,2004} - Y_{i,2000}) - \frac{1}{3} \frac{n_1}{n} \sum_{i=1}^n (1 - D_i) (Y_{i,2004} - Y_{i,2000}) \\
+&\  + \frac{1}{3} \frac{n_0}{n} \sum_{i=1}^n D_i(Y_{i,2004} - Y_{i,1996}) - \frac{1}{3} \frac{n_1}{n} \sum_{i=1}^n (1 - D_i)(Y_{i,2004} - Y_{i,1996})
+\end{align*}
+
+Similarly, for the denominator,
+
+\begin{eqnarray*}
+\sum_{i=1}^n \sum_{t \in \mathcal{T}} \ddot{X_{it}} \ddot{X_{it}}
+&=& \frac{2}{3} \sum_{i=1}^n {(X_{i,2004} - \overline{X_{2004}})}^2 \\
+&=& \frac{2}{3} \left( n_1 - \frac{n_1}{n} n_1 \right) \\
+&=& \frac{2}{3} \frac{n_0 n_1}{n}
+\end{eqnarray*}
+
+Combining these, we have 
+
+\begin{align*}
+& \hat{\beta_{\text{FE2}}} \\
+&= \frac{1}{2} ( \frac{1}{n_1} \sum_{i=1}^n D_i (Y_{i,2004} - Y_{i,2000}) - \frac{1}{n_0} \sum_{i=1}^n (1 - D_i)(Y_{i,2004} - Y_{i,2000}) \\
+&\  + \frac{1}{n_1} \sum_{i=1}^n D_i (Y_{i,2004} - Y_{i,1996}) - \frac{1}{n_0} \sum_{i=1}^n (1 - D_i)(Y_{i,2004} - Y_{i,1996}) ) \\
+&= \frac{1}{2}(\hat{\tau_1} + \hat{\tau_2})
+\end{align*}
+
+## (c)
+
+```{r}
+n1 <- sum(data_q2$treated)
+n0 <- n - n1
+# compute tau_1
+tau1 = sum(data_q2$treated * (data_q2$vote2004 - data_q2$vote2000)) / n1 - sum((rep(1,n) -data_q2$treated) * (data_q2$vote2004 - data_q2$vote2000)) / n0
+# compute tau_2
+tau2 = sum(data_q2$treated * (data_q2$vote2004 - data_q2$vote1996)) / n1 - sum((rep(1,n) -data_q2$treated) * (data_q2$vote2004 - data_q2$vote1996)) / n0
+# compute beta_hat
+beta_hat = (tau1 + tau2) / 2
+print(beta_hat)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
